@@ -126,13 +126,14 @@ func node_service_daemon(n_nodes int, node int, messages_queue *[]ServiceMessage
                 *messages_queue = append(*messages_queue, message)
                 fmt.Println(fmt.Sprintf("node %d : queue ", node), messages_queue)
             } else if message.Type == "drop" { //remember that needs to drop
+                fmt.Println(fmt.Sprintf("node %d : drop token", node))
                 *DropToken = true
             }
         }
     }
 }
 
-func node_main_daemon(n_nodes int, node int, t int, StartTokenRing bool) {
+func node_main_daemon(n_nodes int, node int, t int, timeout int, StartTokenRing bool) {
 
     MainServerAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", getMainPort(node)))
     CheckError(err)
@@ -156,13 +157,13 @@ func node_main_daemon(n_nodes int, node int, t int, StartTokenRing bool) {
     go node_service_daemon(n_nodes, node, &messages_queue, &DropToken)
 
     for i:=0;;i+=1 {
-        MainConn.SetReadDeadline(time.Now().Add(time.Second))
+        MainConn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
         n, _, err := MainConn.ReadFromUDP(buf)
         CheckError(err)
         
         if err != nil { //timeout expired
             fmt.Println(fmt.Sprintf("node %d : timeout expired", node))
-            if (Waiting == true && time.Since(LastSentTokenTime) > time.Second) || StartTokenRing == true { //if node sent and is waiting too long or it is first then create new token and send again
+            if (Waiting == true && time.Since(LastSentTokenTime) > time.Duration(timeout * n_nodes * 2) * time.Second) || StartTokenRing == true { //if node sent and is waiting too long or it is first then create new token and send again
                 fmt.Println(fmt.Sprintf("node %d : created new token", node))
                 token_to_send := LastSentToken
                 
@@ -182,6 +183,7 @@ func node_main_daemon(n_nodes int, node int, t int, StartTokenRing bool) {
             if DropToken == true { // drop, change state of DropToken and sleep for a while
                 DropToken = false
                 time.Sleep(time.Second * time.Duration(t) / 1000)
+                 fmt.Println(fmt.Sprintf("node %d : dropped token", node))
                 continue
             }
 
@@ -264,9 +266,9 @@ func main() {
 
     for i := 0; i < n_nodes; i++ {
         if i == 0 {
-            go node_main_daemon(n_nodes, i, time_interval, true)
+            go node_main_daemon(n_nodes, i, time_interval, 1, true)
         } else {
-            go node_main_daemon(n_nodes, i, time_interval, false)
+            go node_main_daemon(n_nodes, i, time_interval, 1, false)
         }
     }
     
